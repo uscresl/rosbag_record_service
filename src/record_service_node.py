@@ -80,7 +80,7 @@ class RecordServiceNode:
         self.bag_record_map = dict()  # This maintains a map of groups being recorded and their PIDs
         self.service_name = "record_service"
         self.service = None  # This will hold the main service
-        self.publisher = rospy.Publisher('topic_' + self.service_name, RecordMsg, queue_size=1, latch=True)
+        self.publisher = rospy.Publisher(self.service_name, RecordMsg, queue_size=1, latch=True)
         self.init_service_node()
 
     def init_service_node(self):
