@@ -1,0 +1,6 @@
+string action
+string config_file
+string topic_group
+---
+int64 return_code
+string output
