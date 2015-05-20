@@ -8,7 +8,6 @@ PKG = "record_service"
 import datetime
 import roslib; roslib.load_manifest(PKG)
 import os
-import std_msgs
 from subprocess import Popen
 from record_service.srv import *
 from record_service.msg import *
