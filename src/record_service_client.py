@@ -5,7 +5,6 @@ This file defines routines that can call the recording service to start/stop mes
 """
 
 PKG = "record_service"
-import argparse
 import roslib; roslib.load_manifest(PKG)
 from record_service.srv import *
 import rospy
@@ -21,11 +20,13 @@ def make_request(action, config_file, topic_group):
 
 
 if __name__ == "__main__":
-    arg_parser = argparse.ArgumentParser(description='Calls the record_service node to start/stop recording')
-    arg_parser.add_argument('--action', dest='action', required=True, type=str, help='[start/stop] recording')
-    arg_parser.add_argument('--config_file', dest='config_file', required=True, type=str,
-                            help='Absolute path to yaml config file')
-    arg_parser.add_argument('--topic_group', dest='topic_group', required=True, type=str,
-                            help='Topic group that is in the config file')
-    args = arg_parser.parse_args()
-    make_request(args.action, args.config_file, args.topic_group)
+    # Initialize the client node so that we can get the required parameters
+    rospy.init_node('record_service_client')
+    try:
+        action = rospy.get_param('~action')
+        config_file = rospy.get_param('~config_file')
+        topic_group = rospy.get_param('~topic_group')
+        make_request(action, config_file, topic_group)
+    except KeyError as e:
+        print "Missing argument. Usage: _action:=[start/stop] _config_file:=/path/to/file _topic_group:=topic"
+        print e
