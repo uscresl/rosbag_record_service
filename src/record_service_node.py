@@ -79,15 +79,8 @@ class RecordServiceNode:
     def __init__(self):
         self.bag_record_map = dict()  # This maintains a map of groups being recorded and their PIDs
         self.service_name = "record_service"
-        self.service = None  # This will hold the main service
-        self.publisher = rospy.Publisher(self.service_name, RecordMsg, queue_size=1, latch=True)
-        self.init_service_node()
-
-    def init_service_node(self):
-        """
-        Initialize the rospy service
-        """
         rospy.init_node(self.service_name)
+        self.publisher = rospy.Publisher(self.service_name, RecordMsg, queue_size=1, latch=True)
         self.service = rospy.Service(self.service_name, RecordSrv, self.request_handler)
         rospy.spin()
 
