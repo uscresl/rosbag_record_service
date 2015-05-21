@@ -8,12 +8,13 @@ PKG = "record_service"
 import datetime
 import roslib; roslib.load_manifest(PKG)
 import os
-from subprocess import Popen
+import subprocess
 from record_service.srv import *
 from record_service.msg import *
 import rospy
 import signal
 import yaml
+from yaml.scanner import ScannerError
 
 
 class ArgStruct:
@@ -109,7 +110,7 @@ class RecordServiceNode:
 
             # If we are here, then there was no error and we have to start another process for a group
             command = arg_struct.command_string()
-            child_process = Popen(command.split())
+            child_process = subprocess.Popen(command.split())
             self.bag_record_map[request.topic_group] = child_process
             self.publish_topics()
             return RecordSrvResponse(0, "Successfully started recording bag for %s" % request.topic_group)
@@ -117,8 +118,7 @@ class RecordServiceNode:
         elif request.action == "stop":
             if request.topic_group in self.bag_record_map:
                 child_process = self.bag_record_map.pop(request.topic_group)
-                os.killpg(os.getpgid(child_process.pid), signal.SIGINT)  # Kill all sub-processes that $rosbag created
-                child_process.wait()  # This is to avoid a defunct zombie child process even after it has been killed
+                self.kill_process_tree(child_process)
                 self.publish_topics()
                 return RecordSrvResponse(0, "Successfully stopped recording bag for %s" % request.topic_group)
             else:
@@ -126,6 +126,22 @@ class RecordServiceNode:
 
         else:
             return RecordSrvResponse(2, "Invalid action: %s. Must be start/stop" % request.action)
+
+    @staticmethod
+    def kill_process_tree(process):
+        """
+        Kills the process and all of its children
+        :param process: A subprocess.Popen object
+        :return:
+        """
+        ps_command = subprocess.Popen("ps -o pid --ppid %d --noheaders" % process.pid,
+                                      shell=True, stdout=subprocess.PIPE)
+        ps_output = ps_command.stdout.read()
+        ps_command.wait()
+        for pid_str in ps_output.split("\n")[:-1]:
+            os.kill(int(pid_str), signal.SIGINT)
+        process.terminate()
+        process.wait()
 
     @staticmethod
     def parse_config(config_file, topic_group):
@@ -145,7 +161,7 @@ class RecordServiceNode:
         try:
             doc = yaml.load(c_file)
         except ScannerError as e:
-            arg_struct.error = "%s: %s" % (config_file, e.strerror)
+            arg_struct.error = "%s: %s" % (config_file, str(e))
             return arg_struct
         c_file.close()
 
