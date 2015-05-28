@@ -5,6 +5,7 @@
 test1:
   all: False
   regex: qwer
+  split_size: asdf
 test2:
   all: True
   regex: asdf

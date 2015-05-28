@@ -9,8 +9,8 @@ import datetime
 import roslib; roslib.load_manifest(PKG)
 import os
 import subprocess
-from record_service.srv import *
-from record_service.msg import *
+from rosbag_record_service.srv import *
+from rosbag_record_service.msg import *
 import rospy
 import signal
 import yaml
@@ -59,8 +59,7 @@ class ArgStruct:
         output_folder = os.path.expanduser(output_folder)
         if not os.path.isdir(output_folder):
             self.error = "%s is not a valid directory" % output_folder
-            print self.error
-            return
+            raise IOError(self.error)
         dt = datetime.datetime.now()
         date = dt.strftime("%Y-%m-%d")
         output_folder += date + '/'
@@ -92,7 +91,28 @@ class RecordServiceNode:
         self.publisher = rospy.Publisher("~status", RecordMsg, queue_size=1, latch=True)
         self.service = rospy.Service(self.service_name, RecordSrv, self.request_handler)
         self.publish_topics()
-        rospy.spin()
+        self.spin()
+
+    def spin(self):
+        r = rospy.Rate(1)
+
+        while not rospy.is_shutdown():
+            completed_processes = list()
+            for topic_group in self.bag_record_map:
+                return_code = self.bag_record_map[topic_group].poll()
+                if return_code is not None:
+                    something_has_changed = True
+                    if return_code == 0:
+                        rospy.loginfo("%s has stopped recording successfully" % topic_group)
+                    else:
+                        rospy.logwarn("%s has stopped recording with code: %s" % (topic_group, return_code))
+                    completed_processes.append(topic_group)
+
+            if len(completed_processes) > 0:
+                for topic_group in completed_processes:
+                    self.bag_record_map.pop(topic_group)  # This is not being recorded anymore
+                self.publish_topics()
+            r.sleep()
 
     def publish_topics(self):
         """
@@ -128,8 +148,22 @@ class RecordServiceNode:
                 return RecordSrvResponse(return_code=RecordSrvResponse.ERROR)
 
             # If we are here, then there was no error and we have to start another process for a group
-            command = arg_struct.command_string()
+            try:
+                command = arg_struct.command_string()
+            except IOError as e:
+                print str(e)
+                rospy.logerr(str(e))
+                return RecordSrvResponse(return_code=RecordSrvResponse.ERROR)
+
             child_process = subprocess.Popen(command.split())
+            r = rospy.Rate(10)  # Sleep for a while, to possibly allow the process to parse the input
+            r.sleep()
+            return_code = child_process.poll()
+            if not (return_code is None or return_code == 0):
+                print "Error parsing inputs"
+                rospy.logerr("Error parsing inputs")
+                return RecordSrvResponse(return_code=RecordSrvResponse.ERROR)
+
             self.bag_record_map[request.topic_group] = child_process
             self.publish_topics()
             return RecordSrvResponse(return_code=RecordSrvResponse.OK)
@@ -186,44 +220,6 @@ class RecordServiceNode:
             arg_struct.quiet = group_settings.get('quiet', quiet)
             arg_struct.compression = group_settings.get('compression', compression)
             self.topic_groups[group_name] = arg_struct
-
-    @staticmethod
-    def parse_config(config_file, topic_group):
-        """
-        Parses the configuration file and generates an ArgStruct object that can be used
-        to generate the command that records ROS topics
-        :param config_file: absolute path to a YAML configuration file
-        :param topic_group: One of the topics whose configuration can be found in the config file
-        :return:
-        """
-        arg_struct = ArgStruct()
-        try:
-            c_file = open(config_file)
-        except IOError as e:
-            arg_struct.error = "%s: %s" % (config_file, e.strerror)
-            return arg_struct
-        try:
-            doc = yaml.load(c_file)
-        except ScannerError as e:
-            arg_struct.error = "%s: %s" % (config_file, str(e))
-            return arg_struct
-        c_file.close()
-
-        if topic_group not in doc:
-            arg_struct.error = "\"%s\" isn't a valid topic group in the yaml file provided" % topic_group
-            return arg_struct
-        group_settings = doc[topic_group]
-
-        arg_struct.regex = group_settings.get('regex', '')
-        arg_struct.exclude_regex = group_settings.get('exclude', '')
-        arg_struct.all = group_settings.get('all', False)
-        arg_struct.output_folder = group_settings.get('output_folder', '')
-        arg_struct.output_prefix = group_settings.get('output_prefix', '')
-        arg_struct.split_size = group_settings.get('split_size', 0)
-        arg_struct.quiet = group_settings.get('quiet', True)
-        arg_struct.topics = group_settings.get('topics', [])
-
-        return arg_struct
 
 
 if __name__ == "__main__":

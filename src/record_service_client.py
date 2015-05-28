@@ -6,7 +6,7 @@ This file defines routines that can call the recording service to start/stop mes
 
 PKG = "rosbag_record_service"
 import roslib; roslib.load_manifest(PKG)
-from record_service.srv import *
+from rosbag_record_service.srv import *
 import rospy
 
 def make_request(action, topic_group):
