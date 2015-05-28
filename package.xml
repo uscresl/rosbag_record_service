@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package>
-  <name>record_service</name>
+  <name>rosbag_record_service</name>
   <version>1.0.0</version>
   <description>The record_service package</description>
 

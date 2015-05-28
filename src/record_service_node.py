@@ -4,7 +4,7 @@
 This file defines the serving node for managing ROS records
 """
 
-PKG = "record_service"
+PKG = "rosbag_record_service"
 import datetime
 import roslib; roslib.load_manifest(PKG)
 import os
@@ -32,6 +32,7 @@ class ArgStruct:
         self.topics = list()
         self.all = False
         self.error = None
+        self.compression = ''
 
     def command_string(self):
         """
@@ -48,14 +49,18 @@ class ArgStruct:
             command_parts.append('-x %s' % self.exclude_regex)
         if self.split_size > 0:  # Bag files are split into parts if they get too big
             command_parts.append('--split --size=%s' % self.split_size)
+        if self.compression in ('bz2', 'lz4'): # Compression
+            command_parts.append('--%s' % self.compression)
         output_folder = self.output_folder
         if output_folder == '':
             output_folder = '/tmp/'
         if output_folder[-1] != '/':
             output_folder += '/'
+        output_folder = os.path.expanduser(output_folder)
         if not os.path.isdir(output_folder):
-            arg_struct.error = "%s is not a valid directory" % output_folder
-            return arg_struct
+            self.error = "%s is not a valid directory" % output_folder
+            print self.error
+            return
         dt = datetime.datetime.now()
         date = dt.strftime("%Y-%m-%d")
         output_folder += date + '/'
@@ -79,10 +84,14 @@ class RecordServiceNode:
     """
     def __init__(self):
         self.bag_record_map = dict()  # This maintains a map of groups being recorded and their PIDs
+        self.topic_groups = dict() # Maintains the arguments for each topic group loaded from config
+
         self.service_name = "record_service"
         rospy.init_node(self.service_name)
-        self.publisher = rospy.Publisher(self.service_name, RecordMsg, queue_size=1, latch=True)
+        self.load_config()
+        self.publisher = rospy.Publisher("~status", RecordMsg, queue_size=1, latch=True)
         self.service = rospy.Service(self.service_name, RecordSrv, self.request_handler)
+        self.publish_topics()
         rospy.spin()
 
     def publish_topics(self):
@@ -90,7 +99,9 @@ class RecordServiceNode:
         Publish the currently active topic groups
         """
         msg = RecordMsg()
-        msg.topics = self.bag_record_map.keys()
+        #msg.topics = self.bag_record_map.keys()
+        msg.groups = self.topic_groups.keys()
+        msg.statuses = [group in self.bag_record_map for group in msg.groups]
         self.publisher.publish(msg)
 
     def request_handler(self, request):
@@ -99,33 +110,41 @@ class RecordServiceNode:
         :param request: type(RecordSrvRequest) - (action, config_file, topic_group)
         :return: RecordSrvResponse - (return_code, output_message)
         """
-        if request.action == "start":
+        if request.action == request.START:
             if request.topic_group in self.bag_record_map:
                 # This means there is already a process running for the same group. We don't need another process
-                return RecordSrvResponse(1, "Topic group %s is already being recorded" % request.topic_group)
-            arg_struct = RecordServiceNode.parse_config(request.config_file, request.topic_group)
+                return RecordSrvResponse(return_code=RecordSrvResponse.ALREADY_RECORDING)
+
+            # Check if this topic groups exists
+            if request.topic_group not in self.topic_groups:
+                # Topic group does not exist, return error
+                return RecordSrvResponse(return_code=RecordSrvResponse.INVALID_GROUP)
+
+            # Get arg struct for this topic group
+            arg_struct = self.topic_groups[request.topic_group]
+
             if arg_struct.error is not None:
                 # Then there is an error; return immediately
-                return RecordSrvResponse(2, arg_struct.error)
+                return RecordSrvResponse(return_code=RecordSrvResponse.ERROR)
 
             # If we are here, then there was no error and we have to start another process for a group
             command = arg_struct.command_string()
             child_process = subprocess.Popen(command.split())
             self.bag_record_map[request.topic_group] = child_process
             self.publish_topics()
-            return RecordSrvResponse(0, "Successfully started recording bag for %s" % request.topic_group)
+            return RecordSrvResponse(return_code=RecordSrvResponse.OK)
 
-        elif request.action == "stop":
+        elif request.action == request.STOP:
             if request.topic_group in self.bag_record_map:
                 child_process = self.bag_record_map.pop(request.topic_group)
                 self.kill_process_tree(child_process)
                 self.publish_topics()
-                return RecordSrvResponse(0, "Successfully stopped recording bag for %s" % request.topic_group)
+                return RecordSrvResponse(return_code=RecordSrvResponse.OK)
             else:
-                return RecordSrvResponse(1, "Topic group %s has not been started yet" % request.topic_group)
+                return RecordSrvResponse(return_code=RecordSrvResponse.NOT_RUNNING)
 
         else:
-            return RecordSrvResponse(2, "Invalid action: %s. Must be start/stop" % request.action)
+            return RecordSrvResponse(return_code=RecordSrvResponse.INVALID_ACTION)
 
     @staticmethod
     def kill_process_tree(process):
@@ -142,6 +161,31 @@ class RecordServiceNode:
             os.kill(int(pid_str), signal.SIGINT)
         process.terminate()
         process.wait()
+
+    def load_config(self):
+        """
+        Loads the configuration from the ros parameter server and generates ArgStructs
+        for each of them and places in the topic_groups dict.
+        """
+        output_folder = rospy.get_param('~output_folder','')
+        split_size = rospy.get_param('~split_size',0)
+        quiet = rospy.get_param('~quiet',True)
+        exclude = rospy.get_param('~exclude','')
+        compression = rospy.get_param('~compression','')
+
+        for group_name, group_settings in rospy.get_param('~topic_groups', {}).items():
+            arg_struct = ArgStruct()
+            arg_struct.regex = group_settings.get('regex', '')
+            arg_struct.all = group_settings.get('all', False)
+            arg_struct.output_prefix = group_settings.get('output_prefix', '')
+            arg_struct.topics = group_settings.get('topics', [])
+
+            arg_struct.exclude_regex = group_settings.get('exclude', exclude)
+            arg_struct.output_folder = group_settings.get('output_folder', output_folder)
+            arg_struct.split_size = group_settings.get('split_size', split_size)
+            arg_struct.quiet = group_settings.get('quiet', quiet)
+            arg_struct.compression = group_settings.get('compression', compression)
+            self.topic_groups[group_name] = arg_struct
 
     @staticmethod
     def parse_config(config_file, topic_group):

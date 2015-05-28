@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(record_service)
+project(rosbag_record_service)
 
 find_package(catkin REQUIRED COMPONENTS
   roscpp
