@@ -13,8 +13,6 @@ from rosbag_record_service.srv import *
 from rosbag_record_service.msg import *
 import rospy
 import signal
-import yaml
-from yaml.scanner import ScannerError
 
 
 class ArgStruct:
