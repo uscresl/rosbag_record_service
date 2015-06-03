@@ -62,7 +62,7 @@ class ArgStruct:
         date = dt.strftime("%Y-%m-%d")
         output_folder += date + '/'
         if not os.path.isdir(output_folder):
-            os.mkdir(output_folder)  # Make this directory to group today's bags
+            os.makedirs(output_folder)  # Make this directory to group today's bags
         output_prefix = self.output_prefix
         if output_prefix == '':
             output_prefix = dt.strftime("%H-%M-%S")

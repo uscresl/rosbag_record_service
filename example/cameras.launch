@@ -2,12 +2,15 @@
     <node pkg="rosbag_record_service" type="record_service_node.py" name="record_service" output="screen">
         <param name="output_folder" value="~/bags" />
 <rosparam param="topic_groups">
-test1:
+knarr:
   all: False
-  regex: qwer
-test2:
-  all: True
-  regex: asdf
+  exclude: /knarr/mono/image_raw/compressed(.*)
+  topics:
+    /knarr/mono/camera_info
+  output_folder: ~/knarr/
+  output_prefix: knarr-%H-%M-%S
+  split_size: 1024
+  quiet: True
 </rosparam>
     </node>
 </launch>
