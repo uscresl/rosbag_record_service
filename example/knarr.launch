@@ -22,7 +22,8 @@ stereo:
     all: False
     quiet: True
     split_size: 1024
-    output_folder: ~/knarr_stereo/
+    output_folder: ~/knarr/
+    output_prefix: knarr-stereo-%H-%M-%S
     topics:
         - /knarr/stereo/left/image_raw/compressed
         - /knarr/stereo/right/image_raw/compressed
