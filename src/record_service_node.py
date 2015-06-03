@@ -55,14 +55,15 @@ class ArgStruct:
         if output_folder[-1] != '/':
             output_folder += '/'
         output_folder = os.path.expanduser(output_folder)
-        if not os.path.isdir(output_folder):
-            self.error = "%s is not a valid directory" % output_folder
-            raise IOError(self.error)
         dt = datetime.datetime.now()
         date = dt.strftime("%Y-%m-%d")
         output_folder += date + '/'
         if not os.path.isdir(output_folder):
-            os.makedirs(output_folder)  # Make this directory to group today's bags
+            try:
+                os.makedirs(output_folder)  # Make this directory to group today's bags
+            except Exception as e:
+                print "Not able to create directory: %s" % output_folder
+                raise e
         output_prefix = self.output_prefix
         if output_prefix == '':
             output_prefix = dt.strftime("%H-%M-%S")
