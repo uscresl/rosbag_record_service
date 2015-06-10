@@ -32,7 +32,7 @@ class ArgStruct:
         self.error = None
         self.compression = ''
 
-    def command_string(self):
+    def command_string(self, dt=None):
         """
         Generates a command string that represents appropriately the settings parsed
         """
@@ -52,24 +52,18 @@ class ArgStruct:
         output_folder = self.output_folder
         if output_folder == '':
             output_folder = '/tmp/'
-        if output_folder[-1] != '/':
-            output_folder += '/'
-        output_folder = os.path.expanduser(output_folder)
-        dt = datetime.datetime.now()
-        date = dt.strftime("%Y-%m-%d")
-        output_folder += date + '/'
+        output_folder = os.path.expandvars(os.path.expanduser(output_folder))
+        if dt is None:
+            dt = datetime.datetime.now()
+        output_folder = dt.strftime(output_folder)
         if not os.path.isdir(output_folder):
             try:
                 os.makedirs(output_folder)  # Make this directory to group today's bags
             except Exception as e:
-                print "Not able to create directory: %s" % output_folder
+                rospy.logerr("Not able to create directory: %s" % output_folder)
                 raise e
-        output_prefix = self.output_prefix
-        if output_prefix == '':
-            output_prefix = dt.strftime("%H-%M-%S")
-        else:
-            output_prefix = dt.strftime(output_prefix)
-        command_parts.append('-o %s' % output_folder + output_prefix)
+        output_prefix = os.path.expandvars(dt.strftime(self.output_prefix))
+        command_parts.append('-o %s' % os.path.join(output_folder,output_prefix))
         if not self.all:
             command_parts.append(' '.join(self.topics))
         return ' '.join(command_parts)
@@ -89,6 +83,7 @@ class RecordServiceNode:
         self.load_config()
         self.publisher = rospy.Publisher("~status", RecordMsg, queue_size=1, latch=True)
         self.service = rospy.Service(self.service_name, RecordSrv, self.request_handler)
+        self.service = rospy.Service("~multi", RecordSrvMulti, self.request_handler_multi)
         self.publish_topics()
         self.spin()
 
@@ -126,58 +121,75 @@ class RecordServiceNode:
     def request_handler(self, request):
         """
         Handles all incoming requests to this service
-        :param request: type(RecordSrvRequest) - (action, config_file, topic_group)
-        :return: RecordSrvResponse - (return_code, output_message)
+        :param request: type(RecordSrvRequest) - (action, topic_group)
+        :return: RecordSrvResponse - (return_code)
         """
-        if request.action == request.START:
-            if request.topic_group in self.bag_record_map:
+        return_code = self.handle_topic_group(request.topic_group, request.action)
+        self.publish_topics()
+        return RecordSrvResponse(return_code=return_code)
+
+    def request_handler_multi(self, request):
+        """
+        Handles all incoming requests to this service
+        :param request: type(RecordSrvMultiRequest) - (action, topic_groups)
+        :return: RecordSrvMultiResponse - (return_codes)
+        """
+        dt = datetime.datetime.now()
+        return_codes = []
+        for topic_group in request.topic_groups:
+            return_codes.append(self.handle_topic_group(topic_group, request.action, dt=dt))
+        self.publish_topics()
+        return RecordSrvMultiResponse(return_codes=return_codes)
+
+
+    def handle_topic_group(self, topic_group, action, dt=None):
+        if action == RecordSrvRequest.START:
+            if topic_group in self.bag_record_map:
                 # This means there is already a process running for the same group. We don't need another process
-                return RecordSrvResponse(return_code=RecordSrvResponse.ALREADY_RECORDING)
+                return RecordSrvResponse.ALREADY_RECORDING
 
             # Check if this topic groups exists
-            if request.topic_group not in self.topic_groups:
+            if topic_group not in self.topic_groups:
                 # Topic group does not exist, return error
-                return RecordSrvResponse(return_code=RecordSrvResponse.INVALID_GROUP)
+                return RecordSrvResponse.INVALID_GROUP
 
             # Get arg struct for this topic group
-            arg_struct = self.topic_groups[request.topic_group]
+            arg_struct = self.topic_groups[topic_group]
 
             if arg_struct.error is not None:
                 # Then there is an error; return immediately
-                return RecordSrvResponse(return_code=RecordSrvResponse.ERROR)
+                return RecordSrvResponse.ERROR
 
             # If we are here, then there was no error and we have to start another process for a group
             try:
-                command = arg_struct.command_string()
+                command = arg_struct.command_string(dt=dt)
             except IOError as e:
-                print str(e)
                 rospy.logerr(str(e))
-                return RecordSrvResponse(return_code=RecordSrvResponse.ERROR)
+                return RecordSrvResponse.ERROR
 
             child_process = subprocess.Popen(command.split())
-            r = rospy.Rate(10)  # Sleep for a while, to possibly allow the process to parse the input
-            r.sleep()
+            r = rospy.sleep(0.1)  # Sleep for a while, to possibly allow the process to parse the input
+
             return_code = child_process.poll()
             if not (return_code is None or return_code == 0):
-                print "Error parsing inputs"
                 rospy.logerr("Error parsing inputs")
-                return RecordSrvResponse(return_code=RecordSrvResponse.ERROR)
+                return RecordSrvResponse.ERROR
 
-            self.bag_record_map[request.topic_group] = child_process
-            self.publish_topics()
-            return RecordSrvResponse(return_code=RecordSrvResponse.OK)
+            self.bag_record_map[topic_group] = child_process
+            rospy.loginfo("Started recording: %s" % topic_group)
+            return RecordSrvResponse.OK
 
-        elif request.action == request.STOP:
-            if request.topic_group in self.bag_record_map:
-                child_process = self.bag_record_map.pop(request.topic_group)
+        elif action == RecordSrvRequest.STOP:
+            if topic_group in self.bag_record_map:
+                child_process = self.bag_record_map.pop(topic_group)
                 self.kill_process_tree(child_process)
-                self.publish_topics()
-                return RecordSrvResponse(return_code=RecordSrvResponse.OK)
+                rospy.loginfo("Stopped recording: %s" % topic_group)
+                return RecordSrvResponse.OK
             else:
-                return RecordSrvResponse(return_code=RecordSrvResponse.NOT_RUNNING)
+                return RecordSrvResponse.NOT_RUNNING
 
         else:
-            return RecordSrvResponse(return_code=RecordSrvResponse.INVALID_ACTION)
+            return RecordSrvResponse.INVALID_ACTION
 
     @staticmethod
     def kill_process_tree(process):

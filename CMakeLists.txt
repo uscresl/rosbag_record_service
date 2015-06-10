@@ -20,6 +20,7 @@ add_service_files(
     DIRECTORY srv
     FILES
     RecordSrv.srv
+    RecordSrvMulti.srv
 )
 
 ## Generate added messages and services with any dependencies listed here
@@ -46,4 +47,3 @@ catkin_package(
 include_directories(
   ${catkin_INCLUDE_DIRS}
 )
-

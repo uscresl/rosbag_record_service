@@ -1,29 +1,26 @@
 <launch>
-    <node pkg="rosbag_record_service" type="record_service_node.py" name="record_service" output="screen">
-        <param name="output_folder" value="~/bags" />
-<rosparam param="topic_groups">
-cameras:
+    <node pkg="rosbag_record_service" type="record_service_node.py" name="record_service" output="screen" clear_params="true">
+        <param name="output_folder" value="~/bags/%Y-%m-%d/%Y-%m-%d-%H-%M-%S" />
+        <rosparam param="topic_groups">
+mono:
   all: False
   regex: /knarr/mono/image_raw/compressed(.*)
   topics:
     - /knarr/mono/camera_info
-  output_folder: ~/knarr/
-  output_prefix: knarr-mono-%H-%M-%S
+  output_prefix: knarr_mono
   split_size: 1024
   quiet: True
 everything:
     all: True
     exclude: /knarr/(stereo|mono)/(.*)
-    output_prefix: knarr-%H-%M-%S
+    output_prefix: knarr
     split_size: 1024
     quiet: True
-    output_folder: ~/knarr/
 stereo:
     all: False
     quiet: True
     split_size: 1024
-    output_folder: ~/knarr/
-    output_prefix: knarr-stereo-%H-%M-%S
+    output_prefix: knarr-stereo
     topics:
         - /knarr/stereo/left/image_raw/compressed
         - /knarr/stereo/right/image_raw/compressed
@@ -33,6 +30,6 @@ stereo:
         - /knarr/stereo/right/parameter_updates
         - /knarr/stereo/right/parameter_descriptions
         - /knarr/stereo/right/parameter_updates
-</rosparam>
+        </rosparam>
     </node>
 </launch>

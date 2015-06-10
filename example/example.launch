@@ -1,13 +1,15 @@
 <launch>
     <node pkg="rosbag_record_service" type="record_service_node.py" name="record_service" output="screen">
-        <param name="output_folder" value="~/bags" />
+        <param name="output_folder" value="~/bags/%Y-%m-%d/%Y-%m-%d-%H-%M-%S" />
 <rosparam param="topic_groups">
-test1:
-  all: False
-  regex: qwer
-test2:
+all:
   all: True
-  regex: asdf
+  output_prefix: all
+test:
+  all: False
+  topics:
+   - test
+  output_prefix: 'test_$ROBOT'
 </rosparam>
     </node>
 </launch>

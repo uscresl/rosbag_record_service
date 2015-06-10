@@ -1,0 +1,13 @@
+int8 STOP=0
+int8 START=1
+int8 action
+string[] topic_groups
+---
+int8 OK=0
+int8 NOT_RUNNING=1
+int8 ALREADY_RECORDING=2
+int8 INVALID_ACTION=3
+int8 INVALID_GROUP=4
+int8 ERROR=5
+
+int8[] return_codes
